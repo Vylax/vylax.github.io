@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Column Validator Add-In</title>
+
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+    <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+    <script src="./taskpane.js" defer></script>
+</head>
+
+<body class="ms-font-m ms-Fabric">
+
+    <header class="ms-bgColor-neutralLighter ms-font-xl" style="padding: 10px;">
+        <h1>Column Validator</h1>
+    </header>
+
+    <main style="padding: 15px;">
+        <p>This add-in will validate the columns in your current worksheet:</p>
+        <ul>
+            <li><strong>'Code'</strong>: Exactly 9 digits (can start with 0), no trailing spaces</li>
+            <li><strong>'Code postal'</strong>: 4 or 5 digits (can start with 0), no trailing spaces</li>
+        </ul>
+
+        <button id="validateButton" class="ms-Button ms-Button--primary">
+            <span class="ms-Button-label">Validate Sheet</span>
+        </button>
+
+        <p id="statusMessage" style="margin-top: 15px; color: green;"></p>
+    </main>
+
+</body>
+
+</html>
