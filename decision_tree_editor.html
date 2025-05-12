@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decision Tree Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #cy {
+            width: 100%;
+            height: 500px; /* You can adjust this as needed */
+            display: block;
+            border: 1px solid #cbd5e1; /* slate-300 */
+            border-radius: 0.5rem; /* rounded-lg */
+        }
+        .inspector-input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-radius: 0.375rem; /* rounded-md */
+            margin-bottom: 0.5rem;
+        }
+        .inspector-label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: 500; /* medium */
+            color: #374151; /* gray-700 */
+        }
+        /* Custom scrollbar for JSON output */
+        #jsonOutput::-webkit-scrollbar {
+            width: 8px;
+        }
+        #jsonOutput::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+            border-radius: 0.375rem; /* rounded-md */
+        }
+        #jsonOutput::-webkit-scrollbar-thumb {
+            background: #94a3b8; /* slate-400 */
+            border-radius: 0.375rem; /* rounded-md */
+        }
+        #jsonOutput::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* slate-500 */
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-50 text-slate-800 p-4 md:p-8">
+
+    <div class="container mx-auto max-w-6xl">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-sky-700">Decision Tree Editor</h1>
+            <p class="text-slate-600">Click "Add Node" to start. Select elements to edit. Use mouse wheel to zoom, click and drag background to pan.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white p-4 shadow-lg rounded-lg">
+                <div id="cy-container" class="relative">
+                    <div id="cy"></div>
+                    <div id="context-menu" class="absolute bg-white border shadow-lg rounded-md py-1 hidden z-50">
+                        {/* Context menu items will be added here by JS */}
+                    </div>
+                </div>
+                 <div class="mt-4 flex flex-wrap gap-2">
+                    <button id="addNodeBtn" class="bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out">Add Node</button>
+                    <button id="fitToScreenBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out">Fit to Screen</button>
+                    <button id="importJsonBtn" class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out">Import from JSON</button>
+                    <button id="exportJsonBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out">Export to JSON</button>
+                </div>
+            </div>
+
+            <div id="inspector" class="lg:col-span-1 bg-white p-6 shadow-lg rounded-lg h-fit">
+                <h2 class="text-xl font-semibold mb-4 text-sky-700 border-b pb-2">Inspector</h2>
+                <div id="inspectorContent" class="text-slate-600">
+                    <p>Select a node or link to see its properties.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-6 bg-white p-4 shadow-lg rounded-lg">
+            <h2 class="text-xl font-semibold mb-3 text-sky-700">JSON Output</h2>
+            <textarea id="jsonOutput" rows="10" class="w-full p-3 border border-slate-300 rounded-md bg-slate-50 text-sm text-slate-700 focus:ring-sky-500 focus:border-sky-500" placeholder="JSON data will appear here... Paste JSON here for import if preferred."></textarea>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // --- Cytoscape Initialization ---
+            const cy = cytoscape({
+                container: document.getElementById('cy'),
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': 'data(color)', 
+                            'label': 'data(name)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'color': '#ffffff', 
+                            'font-size': '12px',
+                            'text-wrap': 'wrap',
+                            'text-max-width': '100px',
+                            'shape': 'round-rectangle',
+                            'width': 'data(width)',
+                            'height': 'data(height)',
+                            'padding': '10px',
+                            'border-width': 2,
+                            'border-color': 'data(borderColor)' 
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': 'data(color)', 
+                            'target-arrow-color': 'data(color)', 
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'label': 'data(condition)',
+                            'font-size': '10px',
+                            'color': '#334155', 
+                            'text-background-opacity': 1,
+                            'text-background-color': '#f8fafc', 
+                            'text-background-padding': '2px',
+                            'text-rotation': 'autorotate',
+                        }
+                    },
+                    {
+                        selector: '.selected',
+                        style: {
+                            'border-width': 3,
+                            'border-color': '#fb923c', 
+                            'line-color': '#fb923c',
+                            'target-arrow-color': '#fb923c',
+                            'shadow-blur': 10,
+                            'shadow-color': '#fb923c',
+                            'shadow-opacity': 0.5
+                        }
+                    },
+                    {
+                        selector: '.linking',
+                        style: {
+                            'border-color': '#22c55e', 
+                            'border-style': 'dashed',
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'preset' // Nodes will be placed where specified or at (0,0) initially
+                },
+                // Interaction options
+                zoom: 1,
+                minZoom: 0.1, // Allow slightly more zoom out if needed
+                maxZoom: 3,
+                zoomingEnabled: true,
+                userZoomingEnabled: true,
+                panningEnabled: true,
+                userPanningEnabled: true,
+                boxSelectionEnabled: false, 
+                wheelSensitivity: 0.2, // Adjusted for smoother zoom (default is 1)
+            });
+
+            // --- Global State ---
+            let nodeIdCounter = 0;
+            let edgeIdCounter = 0;
+            let selectedElement = null;
+            let linkingState = { active: false, sourceNode: null };
+
+            const inspectorContent = document.getElementById('inspectorContent');
+            const jsonOutput = document.getElementById('jsonOutput');
+            const contextMenu = document.getElementById('context-menu');
+
+            // --- Utility Functions ---
+            function calculateNodeDimensions(text) {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                context.font = '12px Inter'; // Match node font size
+
+                const lines = String(text || "").split('\\n'); 
+                let maxWidth = 0;
+                lines.forEach(line => {
+                    const metrics = context.measureText(line);
+                    if (metrics.width > maxWidth) {
+                        maxWidth = metrics.width;
+                    }
+                });
+                
+                const baseWidth = Math.min(120, Math.max(60, maxWidth + 20)); 
+                const baseHeight = Math.max(40, lines.length * 18 + 15); 
+                return { width: baseWidth, height: baseHeight };
+            }
+            
+            function shadeColor(color, percent) {
+                let R = parseInt(color.substring(1,3),16);
+                let G = parseInt(color.substring(3,5),16);
+                let B = parseInt(color.substring(5,7),16);
+
+                R = parseInt(R * (100 + percent) / 100);
+                G = parseInt(G * (100 + percent) / 100);
+                B = parseInt(B * (100 + percent) / 100);
+
+                R = (R<255)?R:255;  
+                G = (G<255)?G:255;  
+                B = (B<255)?B:255;  
+
+                R = Math.max(0, R);
+                G = Math.max(0, G);
+                B = Math.max(0, B);
+
+                const RR = ((R.toString(16).length==1)?"0"+R.toString(16):R.toString(16));
+                const GG = ((G.toString(16).length==1)?"0"+G.toString(16):G.toString(16));
+                const BB = ((B.toString(16).length==1)?"0"+B.toString(16):B.toString(16));
+
+                return "#"+RR+GG+BB;
+            }
+
+
+            // --- Node and Edge Management ---
+            document.getElementById('addNodeBtn').addEventListener('click', () => addNode());
+            document.getElementById('fitToScreenBtn').addEventListener('click', () => {
+                if (cy.elements().length > 0) {
+                    cy.animate({
+                        fit: {
+                            eles: cy.elements(),
+                            padding: 50 // Add some padding around the graph
+                        },
+                        duration: 500 // Animation duration in milliseconds
+                    });
+                } else {
+                    // Optionally reset zoom if no elements
+                    cy.animate({
+                        zoom: 1,
+                        center: { x: cy.width() / 2, y: cy.height() / 2 },
+                        duration: 500
+                    });
+                }
+            });
+
+
+            function addNode(name, position, existingData = null) {
+                const defaultName = `Node ${nodeIdCounter}`;
+                let nodeName = name;
+                if (!existingData) { 
+                     nodeName = prompt("Enter node name:", name || defaultName);
+                     if (nodeName === null) return null; // User cancelled prompt
+                     nodeName = nodeName || defaultName;
+                }
+
+                const dimensions = calculateNodeDimensions(nodeName);
+                const nodeColor = existingData ? existingData.color : '#0ea5e9'; 
+
+                const newNodeData = {
+                    group: 'nodes',
+                    data: {
+                        id: existingData ? existingData.id : `n${nodeIdCounter}`,
+                        name: nodeName,
+                        color: nodeColor,
+                        borderColor: shadeColor(nodeColor, -20), 
+                        width: existingData && existingData.width ? existingData.width : dimensions.width,
+                        height: existingData && existingData.height ? existingData.height : dimensions.height,
+                        ...(existingData || {}) 
+                    },
+                    position: position || (existingData && existingData.position) || { x: Math.random() * (cy.width() * 0.6) + (cy.width() * 0.1), y: Math.random() * (cy.height() * 0.6) + (cy.height() * 0.1) }
+                };
+
+                const addedNode = cy.add(newNodeData);
+                
+                if (!existingData) {
+                    nodeIdCounter++;
+                }
+                updateInspector(null);
+                return addedNode;
+            }
+
+            function removeNode(node) {
+                if (node) {
+                    cy.remove(node);
+                    updateInspector(null);
+                }
+            }
+
+            function addEdge(sourceNode, targetNode, existingData = null) {
+                if (!existingData) { 
+                    if (targetNode.incomers('edge[target="' + targetNode.id() + '"]').length > 0) {
+                        alert("Error: Target node already has a parent. A node can only have one parent.");
+                        return null;
+                    }
+                    if (sourceNode.id() === targetNode.id()) {
+                         alert("Error: Cannot link a node to itself.");
+                         return null;
+                    }
+                    if (sourceNode.edgesTo(targetNode).length > 0) {
+                        alert("Error: An edge already exists from this source to this target.");
+                        return null;
+                    }
+                }
+
+                let condition;
+                if (!existingData) {
+                    condition = prompt("Enter link condition (optional):", "Condition");
+                    if (condition === null && !existingData) return null; // User cancelled prompt for new edge
+                } else {
+                    condition = existingData.condition;
+                }
+                
+                const edgeColor = existingData ? existingData.color : '#64748b'; 
+
+                const newEdgeData = {
+                    group: 'edges',
+                    data: {
+                        id: existingData ? existingData.id : `e${edgeIdCounter}`,
+                        source: sourceNode.id(),
+                        target: targetNode.id(),
+                        condition: condition || "",
+                        color: edgeColor,
+                        ...(existingData || {}) 
+                    }
+                };
+                const newEdge = cy.add(newEdgeData);
+                if (!existingData) {
+                    edgeIdCounter++;
+                }
+                return newEdge;
+            }
+
+            function removeEdge(edge) {
+                if (edge) {
+                    cy.remove(edge);
+                    updateInspector(null);
+                }
+            }
+
+            // --- Inspector Panel Logic ---
+            function updateInspector(element) {
+                selectedElement = element;
+                cy.elements().removeClass('selected');
+                if (element) {
+                    element.addClass('selected');
+                }
+
+                inspectorContent.innerHTML = ''; 
+
+                if (!element) {
+                    inspectorContent.innerHTML = '<p>Select a node or link to see its properties.</p>';
+                    return;
+                }
+
+                const elementType = element.isNode() ? 'Node' : 'Link';
+                const title = document.createElement('h3');
+                title.className = 'text-lg font-semibold mb-3 text-slate-700';
+                title.textContent = `Edit ${elementType}: ${element.isNode() ? element.data('name') : element.data('id')}`;
+                inspectorContent.appendChild(title);
+
+                const colorLabel = document.createElement('label');
+                colorLabel.className = 'inspector-label';
+                colorLabel.textContent = 'Color:';
+                inspectorContent.appendChild(colorLabel);
+
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.className = 'inspector-input h-10';
+                colorInput.value = element.data('color') || (element.isNode() ? '#0ea5e9' : '#64748b');
+                colorInput.addEventListener('input', (e) => {
+                    const newColor = e.target.value;
+                    element.data('color', newColor);
+                    if (element.isNode()) {
+                        element.data('borderColor', shadeColor(newColor, -20));
+                    }
+                });
+                inspectorContent.appendChild(colorInput);
+
+                if (element.isNode()) {
+                    const nameLabel = document.createElement('label');
+                    nameLabel.className = 'inspector-label';
+                    nameLabel.textContent = 'Name:';
+                    inspectorContent.appendChild(nameLabel);
+
+                    const nameInput = document.createElement('input');
+                    nameInput.type = 'text';
+                    nameInput.className = 'inspector-input';
+                    nameInput.value = element.data('name');
+                    nameInput.addEventListener('input', (e) => {
+                        const newName = e.target.value;
+                        element.data('name', newName);
+                        const dims = calculateNodeDimensions(newName);
+                        element.data('width', dims.width);
+                        element.data('height', dims.height);
+                    });
+                    inspectorContent.appendChild(nameInput);
+
+                    const startLinkBtn = document.createElement('button');
+                    startLinkBtn.textContent = 'Start Link From This Node';
+                    startLinkBtn.className = 'mt-2 w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-3 rounded-md text-sm transition duration-150';
+                    startLinkBtn.onclick = () => {
+                        linkingState.active = true;
+                        linkingState.sourceNode = element;
+                        element.addClass('linking');
+                        const feedback = document.createElement('p');
+                        feedback.className = 'text-sm text-blue-600 mt-2 linking-feedback';
+                        feedback.textContent = 'Click on a target node to complete the link. Click this node again or background to cancel.';
+                        const oldFeedback = inspectorContent.querySelector('.linking-feedback');
+                        if(oldFeedback) oldFeedback.remove();
+                        inspectorContent.insertBefore(feedback, startLinkBtn.nextSibling);
+                    };
+                    inspectorContent.appendChild(startLinkBtn);
+
+                } else { // Edge specific
+                    const conditionLabel = document.createElement('label');
+                    conditionLabel.className = 'inspector-label';
+                    conditionLabel.textContent = 'Condition:';
+                    inspectorContent.appendChild(conditionLabel);
+
+                    const conditionInput = document.createElement('input');
+                    conditionInput.type = 'text';
+                    conditionInput.className = 'inspector-input';
+                    conditionInput.value = element.data('condition');
+                    conditionInput.addEventListener('input', (e) => {
+                        element.data('condition', e.target.value);
+                    });
+                    inspectorContent.appendChild(conditionInput);
+                }
+
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = `Remove ${elementType}`;
+                removeBtn.className = 'mt-4 w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-3 rounded-md text-sm transition duration-150';
+                removeBtn.onclick = () => {
+                    if (confirm(`Are you sure you want to remove this ${elementType}?`)) {
+                        if (element.isNode()) removeNode(element);
+                        else removeEdge(element);
+                    }
+                };
+                inspectorContent.appendChild(removeBtn);
+            }
+            
+
+            // --- Event Handlers for Cytoscape ---
+            cy.on('tap', 'node', function(evt){
+                const node = evt.target;
+                const oldFeedback = inspectorContent.querySelector('.linking-feedback');
+                if(oldFeedback) oldFeedback.remove();
+
+                if (linkingState.active && linkingState.sourceNode && linkingState.sourceNode.id() !== node.id()) {
+                    const newEdge = addEdge(linkingState.sourceNode, node);
+                    if (newEdge) updateInspector(newEdge); // Select the new edge
+                    else updateInspector(linkingState.sourceNode); // If edge creation failed, reselect source
+                    linkingState.sourceNode.removeClass('linking');
+                    linkingState.active = false;
+                    linkingState.sourceNode = null;
+                } else if (linkingState.active && linkingState.sourceNode && linkingState.sourceNode.id() === node.id()) {
+                    linkingState.sourceNode.removeClass('linking');
+                    linkingState.active = false;
+                    linkingState.sourceNode = null;
+                    updateInspector(node); 
+                }
+                else {
+                    updateInspector(node);
+                }
+            });
+
+            cy.on('tap', 'edge', function(evt){
+                const edge = evt.target;
+                const oldFeedback = inspectorContent.querySelector('.linking-feedback');
+                if(oldFeedback) oldFeedback.remove();
+
+                 if (linkingState.active) { 
+                    linkingState.sourceNode.removeClass('linking');
+                    linkingState.active = false;
+                    linkingState.sourceNode = null;
+                }
+                updateInspector(edge);
+            });
+
+            cy.on('tap', function(evt){ 
+                if(evt.target === cy){ // Tap on background
+                    const oldFeedback = inspectorContent.querySelector('.linking-feedback');
+                    if(oldFeedback) oldFeedback.remove();
+                    if (linkingState.active && linkingState.sourceNode) {
+                        linkingState.sourceNode.removeClass('linking');
+                    }
+                    linkingState.active = false;
+                    linkingState.sourceNode = null;
+                    updateInspector(null);
+                }
+            });
+
+            // --- Context Menu (Right Click) ---
+            cy.on('cxttap', function(event){
+                event.preventDefault(); 
+                const position = event.position; 
+
+                contextMenu.innerHTML = ''; 
+
+                const addNodeItem = document.createElement('a');
+                addNodeItem.href = '#';
+                addNodeItem.className = 'block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100';
+                addNodeItem.textContent = 'Add Node Here';
+                addNodeItem.onclick = (e) => {
+                    e.preventDefault();
+                    addNode(undefined, position); 
+                    contextMenu.classList.add('hidden');
+                };
+                contextMenu.appendChild(addNodeItem);
+                
+                const target = event.target;
+                if (target !== cy && (target.isNode() || target.isEdge())) {
+                    const removeItem = document.createElement('a');
+                    removeItem.href = '#';
+                    removeItem.className = 'block px-4 py-2 text-sm text-red-600 hover:bg-red-50';
+                    removeItem.textContent = `Remove ${target.isNode() ? 'Node' : 'Link'}`;
+                    removeItem.onclick = (e) => {
+                        e.preventDefault();
+                        if (confirm(`Are you sure you want to remove this ${target.isNode() ? 'element' : 'link'}?`)) {
+                            if (target.isNode()) removeNode(target);
+                            else removeEdge(target);
+                        }
+                        contextMenu.classList.add('hidden');
+                    };
+                    contextMenu.appendChild(removeItem);
+                }
+
+                const cyContainerRect = document.getElementById('cy-container').getBoundingClientRect();
+                contextMenu.style.left = `${event.renderedPosition.x + cyContainerRect.left}px`;
+                contextMenu.style.top = `${event.renderedPosition.y + cyContainerRect.top}px`;
+                contextMenu.classList.remove('hidden');
+            });
+
+            document.addEventListener('click', function(e) {
+                // Hide context menu if clicked outside of it or its trigger
+                if (!contextMenu.contains(e.target) && !e.target.closest('#context-menu')) {
+                     contextMenu.classList.add('hidden');
+                }
+            });
+
+
+            // --- JSON Export ---
+            document.getElementById('exportJsonBtn').addEventListener('click', () => {
+                const elements = cy.json().elements;
+                const exportData = {
+                    nodes: [],
+                    edges: []
+                };
+
+                if (elements.nodes) {
+                    exportData.nodes = elements.nodes.map(n => ({
+                        id: n.data.id,
+                        name: n.data.name,
+                        color: n.data.color,
+                        borderColor: n.data.borderColor, 
+                        position: n.position, 
+                        width: n.data.width,
+                        height: n.data.height
+                    }));
+                }
+
+                if (elements.edges) {
+                    exportData.edges = elements.edges.map(e => ({
+                        id: e.data.id,
+                        source: e.data.source,
+                        target: e.data.target,
+                        condition: e.data.condition,
+                        color: e.data.color
+                    }));
+                }
+                jsonOutput.value = JSON.stringify(exportData, null, 2);
+                alert("Graph exported to JSON text area below!");
+            });
+
+            // --- JSON Import ---
+            document.getElementById('importJsonBtn').addEventListener('click', handleImportFromJson);
+
+            function handleImportFromJson() {
+                const jsonString = prompt("Paste your JSON data here to import the graph:", jsonOutput.value);
+                if (jsonString === null) { // User cancelled prompt
+                    alert("Import cancelled.");
+                    return;
+                }
+                if (!jsonString.trim()) { // Empty input
+                     alert("No JSON data provided. Import cancelled.");
+                    return;
+                }
+
+
+                let importData;
+                try {
+                    importData = JSON.parse(jsonString);
+                } catch (error) {
+                    alert(`Error parsing JSON: ${error.message}`);
+                    return;
+                }
+
+                if (!importData || typeof importData !== 'object' || !Array.isArray(importData.nodes) || !Array.isArray(importData.edges)) {
+                    alert("Invalid JSON structure. Expected 'nodes' and 'edges' arrays.");
+                    return;
+                }
+
+                cy.elements().remove(); 
+
+                let maxNodeNum = -1;
+                let maxEdgeNum = -1;
+                const elementsToAdd = [];
+
+                importData.nodes.forEach(nodeData => {
+                    const idNum = parseInt(String(nodeData.id || '').replace('n', ''), 10);
+                    if (!isNaN(idNum) && idNum > maxNodeNum) {
+                        maxNodeNum = idNum;
+                    }
+                    const name = nodeData.name || `Node ${maxNodeNum + 1}`;
+                    const color = nodeData.color || '#0ea5e9';
+                    const dims = (nodeData.width && nodeData.height) ? {width: nodeData.width, height: nodeData.height} : calculateNodeDimensions(name);
+
+                    elementsToAdd.push({
+                        group: 'nodes',
+                        data: {
+                            id: nodeData.id || `n${maxNodeNum +1}`, 
+                            name: name,
+                            color: color,
+                            borderColor: nodeData.borderColor || shadeColor(color, -20),
+                            width: dims.width,
+                            height: dims.height,
+                            ...nodeData 
+                        },
+                        position: nodeData.position || { x: Math.random() * 200, y: Math.random() * 200 }
+                    });
+                });
+                
+                nodeIdCounter = maxNodeNum + 1;
+
+                importData.edges.forEach(edgeData => {
+                    const idNum = parseInt(String(edgeData.id || '').replace('e', ''), 10);
+                     if (!isNaN(idNum) && idNum > maxEdgeNum) {
+                        maxEdgeNum = idNum;
+                    }
+                    elementsToAdd.push({
+                        group: 'edges',
+                        data: {
+                            id: edgeData.id || `e${maxEdgeNum + 1}`, 
+                            source: edgeData.source,
+                            target: edgeData.target,
+                            condition: edgeData.condition || "",
+                            color: edgeData.color || '#64748b',
+                            ...edgeData
+                        }
+                    });
+                });
+                edgeIdCounter = maxEdgeNum + 1;
+
+                if (elementsToAdd.length > 0) {
+                    cy.add(elementsToAdd);
+                    cy.animate({ // Fit to screen after import
+                        fit: { eles: cy.elements(), padding: 50 },
+                        duration: 500
+                    });
+                }
+                
+                updateInspector(null); 
+                jsonOutput.value = jsonString; 
+                alert("Graph imported successfully!");
+            }
+            
+            // --- Initial Setup ---
+            if (cy.nodes().length === 0) {
+                const initialNode = addNode("Root Node", { x: (cy.width()/2) || 150, y: (cy.height()/4) || 100 }, null);
+                // If addNode returns null (e.g. user cancelled prompt), it won't proceed.
+            }
+            updateInspector(null);
+        });
+    </script>
+
+</body>
+</html>
